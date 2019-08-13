@@ -372,9 +372,10 @@ K8S多组件之间通信原理</p>
 </table><h2 id="etcd">etcd</h2>
 <p>Etcd 是 CoreOS 基于 Raft 开发的分布式 key-value 存储，可用于服务发现、共享配置以及一致性保障（如数据库选主、分布式锁等）。</p>
 <h2 id="kube-controller-manager">kube-controller-manager</h2>
-<p><img src="https://i.loli.net/2019/08/12/RyPTzkrf1qw5VKg.png" alt="assets_-LDAOok5ngY4pc1lEDes_-L_kZB_hPn0h_fskH43w_-L_kZGkSetdfkFl6OL6N_post-ccm-arch.png"><br>
-Controller Manager 由 kube-controller-manager 和 cloud-controller-manager 组成，是 Kubernetes 的大脑，它通过 apiserver 监控整个集群的状态，并确保集群处于预期的工作状态。<br>
-Kube-controller-manager 由一系列的控制器组成</p>
+<p><img src="https://i.loli.net/2019/08/12/RyPTzkrf1qw5VKg.png" alt="assets_-LDAOok5ngY4pc1lEDes_-L_kZB_hPn0h_fskH43w_-L_kZGkSetdfkFl6OL6N_post-ccm-arch.png"></p>
+<p>Controller Manager 由 kube-controller-manager 和 cloud-controller-manager 组成，是 Kubernetes 的大脑，它通过 apiserver 监控整个集群的状态，并确保集群处于预期的工作状态。<br>
+Kube-controller-manager 由一系列的控制器组成<br>
+<img src="https://i.loli.net/2019/08/13/5GwXKSWfODuFaVt.png" alt="20170721232653797.png"></p>
 <ul>
 <li>Replication Controller</li>
 <li>Node Controller</li>
@@ -432,6 +433,81 @@ cloud-controller-manager 在 Kubernetes 启用 Cloud Provider 的时候才需要
 <li>Kubelet 以 PodSpec 的方式工作。PodSpec 是描述一个 Pod 的 YAML 或 JSON 对象。 kubelet 采用一组通过各种机制提供的 PodSpecs（主要通过 apiserver），并确保这些 PodSpecs 中描述的 Pod 正常健康运行</li>
 </ul>
 <h3 id="static-pod">Static Pod</h3>
-<p>所有以非 API Server 方式创建的 Pod 都叫 Static Pod。Kubelet 将 Static Pod 的状态汇报给 API Server，API Server 为该 Static Pod 创建一个 Mirror Pod 和其相匹配。Mirror Pod 的状态将真实反映 Static Pod 的状态。当 Static Pod 被删除时，与之相对应的 Mirror Pod 也会被删除。</p>
+<ul>
+<li>静态Pod是由kubelet进行管理的仅存在于特定Node上的Pod。不能通过API Server进行管理，无法与RC、Deployment或者DaemonSet进行管理，并且kubelet无法对其进行健康检查。</li>
+<li>静态Pod总是由kubelet进行创建，并且总是在kuelet所在的Node上运行</li>
+<li>所有以非 API Server 方式创建的 Pod 都叫 Static Pod。Kubelet 将 Static Pod 的状态汇报给 API Server，API Server 为该 Static Pod 创建一个 Mirror Pod 和其相匹配。Mirror Pod 的状态将真实反映 Static Pod 的状态。当 Static Pod 被删除时，与之相对应的 Mirror Pod 也会被删除。</li>
+<li></li>
+</ul>
 <h3 id="容器健康检查">容器健康检查</h3>
+<ol>
+<li>LivenessProbe 探针：用于判断容器是否健康，告诉 Kubelet 一个容器什么时候处于不健康的状态。如果 LivenessProbe 探针探测到容器不健康，则 Kubelet 将删除该容器，并根据容器的重启策略做相应的处理。如果一个容器不包含 LivenessProbe 探针，那么 Kubelet 认为该容器的 LivenessProbe 探针返回的值永远是 “Success”</li>
+<li>ReadinessProbe：用于判断容器是否启动完成且准备接收请求。如果 ReadinessProbe 探针探测到失败，则 Pod 的状态将被修改。Endpoint Controller 将从 Service 的 Endpoint 中删除包含该容器所在 Pod 的 IP 地址的 Endpoint 条目。<br>
+livenessProbe 包含如下三种实现方式：</li>
+</ol>
+<ul>
+<li>ExecAction：在容器内部执行一个命令，如果该命令的退出状态码为 0，则表明容器健康；</li>
+<li>TCPSocketAction：通过容器的 IP 地址和端口号执行 TCP 检查，如果端口能被访问，则表明容器健康；</li>
+<li>HTTPGetAction：通过容器的 IP 地址和端口号及路径调用 HTTP GET 方法，如果响应的状态码大于等于 200 且小于 400，则认为容器状态健康。</li>
+</ul>
+<h3 id="cadvisor-资源监控">cAdvisor 资源监控</h3>
+<p>Kubernetes集群中，应用程序的执行情况可以在不同的级别上检测到，包括：容器、Pod、Servvice和整个集群。Heapster项目为K8S提供了一个基本监控平台，它是集群级别的监控事件数据集成器（Aggregator）.Heapster以Pod的方式运行在集群中，Heapster通过Kubelet发现所有运行在集群中的节点，并查看这些节点的资源使用情况。Kubelet通过cAdvisor获取其所在节点及容器的数据。</p>
+<ul>
+<li>cAdvisor 是一个开源的分析容器资源使用率和性能特性的代理工具，已集成到 Kubernetes 代码中。</li>
+<li>cAdvisor 自动查找所有在其所在节点上的容器，自动采集 CPU、内存、文件系统和网络使用的统计信息。</li>
+<li>cAdvisor 通过它所在节点机的 Root 容器，采集并分析该节点机的全面使用情况。</li>
+<li>cAdvisor 通过其所在节点机的 4194 端口暴露一个简单的 UI</li>
+</ul>
+<h3 id="container-runtime">Container Runtime</h3>
+<p>负责真正管理镜像和容器的生命周期。Kubelet通过Container Runtime Interface（CRI）与容器云形式交互，以管理镜像和容器。</p>
+<ul>
+<li>拆分成Sandbox和Container的gPRC接口，并将镜像管理和容器管理分离到不同的服务</li>
+</ul>
+<p><img src="https://i.loli.net/2019/08/13/FDv8ZWuRi3X5SCg.png" alt="assets_-LDAOok5ngY4pc1lEDes_-LOmrfw3UHfIY1g0xnLo_-LOmroTRjl0FBixIYL5x_cri.png"></p>
+<h2 id="kube-proxy">kube-proxy</h2>
+<ul>
+<li>每台node上都运行一个kube-proxy服务，监听API server和endpoint的变化情况，并通过iptables等来为服务配置负载均衡（仅支持TCP和UDP）</li>
+<li>kube-proxy可以直接运行在物理机上，也可以在static pod或者daemonset的方式运行</li>
+<li>实现方式
+<ul>
+<li>userspace:用户控件监听端口，所有服务通过iptables转发到这个端口，然后在其内部负载均衡到实际pod</li>
+<li>iptables:完全以iptables规则的方式实现service负载均衡（服务多的时候，产生太多iptables规则）</li>
+<li>ipvs：解决iptables模式性能问题，增量式更新，保证service更新期间连接不断开</li>
+</ul>
+</li>
+<li>应用层的转发机制通过services是无法实现的，需要借助Ingress将不同URL的访问请求转发到后端不同的service</li>
+</ul>
+<h2 id="kube-dns">kube-dns</h2>
+<ul>
+<li>目前推荐CoreDNS替代kube-dns(skydns)</li>
+<li>DNS 格式</li>
+<li>Service
+<ul>
+<li>A record (cluster IP 或Pod IP列表)</li>
+<li>SRV record</li>
+</ul>
+</li>
+<li>Pod
+<ul>
+<li>A record:</li>
+<li>指定hostname和subdomain</li>
+</ul>
+</li>
+<li>工作原理</li>
+<li>kube-dns：DNS 服务的核心组件，主要由 KubeDNS 和 SkyDNS 组成
+<ul>
+<li>KubeDNS 负责监听 Service 和 Endpoint 的变化情况，并将相关的信息更新到 SkyDNS 中</li>
+<li>SkyDNS 负责 DNS 解析，监听在 10053 端口 (tcp/udp)，同时也监听在 10055 端口提供 metrics</li>
+<li>kube-dns 还监听了 8081 端口，以供健康检查使用</li>
+</ul>
+</li>
+<li>dnsmasq-nanny：负责启动 dnsmasq，并在配置发生变化时重启 dnsmasq
+<ul>
+<li>dnsmasq 的 upstream 为 SkyDNS，即集群内部的 DNS 解析由 SkyDNS 负责</li>
+</ul>
+</li>
+<li>sidecar：负责健康检查和提供 DNS metrics（监听在 10054 端口）</li>
+</ul>
+<p><img src="https://i.loli.net/2019/08/13/kV82oOjNUX6dQzC.png" alt="assets_-LDAOok5ngY4pc1lEDes_-LM_tX5rWaCuzsx7xEcz_-LM_t_Oxw2Twn_BSf7GQ_kube-dns.png"></p>
+<h1 id="资源对象">资源对象</h1>
 
